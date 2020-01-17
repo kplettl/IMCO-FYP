@@ -5,33 +5,7 @@ Created on Mon Jan 13 01:08:29 2020
 @author: plettlk
 """
 
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Jan 11 17:54:23 2020
 
-@author: plettlk
-"""
-
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Dec 13 17:17:12 2019
-
-@author: plettlk
-"""
-
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Dec 12 17:38:35 2019
-
-@author: plettlk
-"""
-
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Dec 12 11:29:42 2019
-
-@author: plettlk
-"""
 import re
 numbers = re.compile(r'(\d+)')
 def numericalSort(value):
