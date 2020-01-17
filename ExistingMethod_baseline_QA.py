@@ -1,16 +1,18 @@
-#Original Code from Lukas Sebeke
+# -*- coding: utf-8 -*-
 """
-Created on Tue Aug 20 13:02:55 2019
+Created on Sat Jan 11 00:06:18 2020
 
-@author: kiraplettl
+@author: plettlk
 """
+
+
 
 from os.path import abspath
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import pyqtgraph as pg
-from PARRECread import PARRECread
+#from PARRECread import PARRECread
 import numpy as np
 import scipy.ndimage as ndimage 
 from scipy.ndimage.filters import convolve
@@ -26,23 +28,50 @@ gamma = 0.267513e9
 B0 = 3
 
 ''' Importing Data '''
+#Janina phantom data
+#sonalleveNativeFile = abspath(
+#        'Kira/temperature baseline_2019-08-12_14-02-41_Native.PAR'
+#                ) 
 
-#Stationary QA phantom data
-sonalleveNativeFile = abspath(             
-        r"C:\Users\plettlk\DCGAN_Image_Completion\19-PLEK-RLES-05\30W-sonication-wo-motion-artefact_2019-11-12_13-55-06_Native.PAR"
-        )
 
+#stationary QA phantom data
+
+sonalleveNativeFile1 = abspath(      
+        r"C:\Users\plettlk\DCGAN_Image_Completion\19-PLEK-RLES-04\qa-phantom-baseline-scan_2019-10-14_14-17-13_Native.PAR"
+            )
+
+
+
+sonalleveNativeFile2 = abspath(      
+        r"C:\Users\plettlk\DCGAN_Image_Completion\19-PLEK-RLES-04\qa-phantom-baseline-scan-2_2019-10-14_15-15-00_Native.PAR"
+            )
 # read temperature data from PARREC files
-sonalleveNativeData,Params,Dims = PARRECread(sonalleveNativeFile)
+sonalleveNativeData1,Params,Dims = PARRECread(sonalleveNativeFile1)
 
-phaseMaps = sonalleveNativeData[:,:,0,0,0,1,:].swapaxes(0,2)
-MMaps = sonalleveNativeData[:,:,0,0,0,0,:].swapaxes(0,2)
+phaseMaps1 = sonalleveNativeData1[:,:,0,0,0,1,:].swapaxes(0,2)
+MMaps1 = sonalleveNativeData1[:,:,0,0,0,0,:].swapaxes(0,2)
 
-phaseMaps = phaseMaps[9,:,:]
+phaseMaps1 = phaseMaps1[0:693,:,:]
+
+
+
+sonalleveNativeData2,Params,Dims = PARRECread(sonalleveNativeFile2)
+
+phaseMaps2= sonalleveNativeData2[:,:,0,0,0,1,:].swapaxes(0,2)
+MMaps2 = sonalleveNativeData2[:,:,0,0,0,0,:].swapaxes(0,2)
+
+phaseMaps2 = phaseMaps2[728:1429,:,:]
+
+MMaps2 = MMaps2[728:1429,:,:]
+
+phaseMaps_stack = np.vstack((phaseMaps1, phaseMaps2))
+MMaps_stack = np.vstack((MMaps1,MMaps2))
+
+phaseMaps = phaseMaps_stack[0,:,:]
 phaseMaps = phaseMaps[None,:,:]
-
-MMaps = MMaps[9,:,:]
+MMaps = MMaps_stack[0,:,:]
 MMaps = MMaps[None,:,:]
+
 
 #pg.image(phaseMaps,title='phase')
 #pg.image(MMaps,title='magnitude')
@@ -52,6 +81,8 @@ MMaps = MMaps[None,:,:]
 masks = np.ones_like(MMaps)
     
 masks[np.where(MMaps<np.max(MMaps)*0.2)]=0
+xInBaseline,yInBaseline = np.where(np.logical_not(masks[0]))
+masks[:,xInBaseline,yInBaseline] = 0
 
 k = np.zeros((7,7,7))
 k[[2,3,4],:,:] = 1
@@ -94,7 +125,7 @@ for i,mask in enumerate(masks_conv):
     labelMap = np.ones_like(targetMap)*dominantLabel
     coherentMask[i][np.where(labeledMask==labelMap)]=0
    
-# definining fram ROI
+
 innerROIRad = 15e-3
 outerROIRad = 35e-3
 
@@ -105,11 +136,11 @@ xOutsideRing,yOutsideRing = np.where(xMap**2+yMap**2>outerROIRad**2)
 referenceMask = np.zeros_like(MMaps)
 referenceMask[:,xInsideRing,yInsideRing]=1
 referenceMask[:,xOutsideRing,yOutsideRing]=1
+
 #pg.image(referenceMask, title='Ref mask')
 #pg.image(coherentMask, title='Coherent mask')
 
 maskedPhase = np.ma.masked_where(coherentMask[:phaseMaps.shape[0]],phaseMaps[:coherentMask.shape[0]],copy=True)
-#pg.image(maskedPhase)
 
 unwrappedPhase_init = unwrap_phase(maskedPhase,seed=100)
 
@@ -118,6 +149,7 @@ unwrappedPhase_init = unwrap_phase(maskedPhase,seed=100)
 
 inclusionMask = np.logical_and(np.logical_not(referenceMask),np.logical_not(coherentMask))  
 exclusionMask = np.logical_not(inclusionMask)
+
 #pg.image(inclusionMask,title='inclusion mask')
 
 referencePhase = unwrappedPhase_init[np.where(inclusionMask[:unwrappedPhase_init.shape[0]])]
@@ -169,9 +201,11 @@ for deg in degrees:
     
     for i,iMask in enumerate(inclusionMask[:unwrappedPhase_init.shape[0]]):
 
+
         X = np.where(iMask)
         X = np.transpose(np.array(X))
-
+    
+    
         Y = unwrappedPhase_init[i][np.where(iMask)]
 
         poly_features = PolynomialFeatures(degree=deg, include_bias=False)
@@ -179,6 +213,7 @@ for deg in degrees:
         
         weights = (MMaps[i][np.where(iMask)])**2
       
+
         X_train, X_test, Y_train, Y_test, w_train, w_test = train_test_split(X_poly, Y, weights, test_size=0.33, random_state=815)
 
         reg = linear_model.LinearRegression(fit_intercept=True)
@@ -209,13 +244,18 @@ for deg in degrees:
 
     deltaT = phase_diff/(B0*alpha*gamma*echoTime) # full temperature map
     
+    
     innerDeltaT = deltaT[np.where(predictionMask[:deltaT.shape[0]])] #inner ROI map for SD testing
     innerDeltaTMap[np.where(predictionMask[:innerDeltaTMap.shape[0]])] = innerDeltaT
 
     outerDeltaT = deltaT[np.where(frameMask[:deltaT.shape[0]])] #frame ROI map for SD testing 
     outerDeltaTMap[np.where(frameMask[:outerDeltaTMap.shape[0]])] = outerDeltaT
 
+    
 #    pg.image(deltaT,title='Temperature Difference, Degree: {}'.format(deg))
+#    pg.image(innerDeltaTMap,title='Inner Temperature Difference, Degree: {}'.format(deg))
+#    pg.image(outerDeltaTMap, title='Frame Temperature Difference, Degree: {}'.format(deg))
+#    
 
     innerStdDevT = np.std(innerDeltaTMap)
     innerStdDevTs.append(innerStdDevT)
@@ -226,42 +266,36 @@ for deg in degrees:
     meanOffset = np.mean(innerDeltaTMap)
     meanOffsets.append(meanOffset)
     
-#
-#fig = plt.figure()
+
+#fig = plt.figure(figsize=(8,4))
 #ax1 = fig.add_subplot(111)
-#ax1.plot(degrees, innerStdDevTs, 'k', label='Inner Region', linewidth=1.5, marker='o', markersize = 6)
-#ax1.set_title('Standard Deviation of Temperature\n Estimation of the Stationary QA Phantom',size=18)
-#ax1.plot(degrees, outerStdDevTs, color='xkcd:dark orange', label='Outer Region', linestyle='--', marker='^', markersize=6, linewidth=1.5)
-#ax1.legend(loc='best', fontsize=18)
-#ax1.set_xlabel('Degree of polynomial', size=18)
-#ax1.set_ylabel('Standard deviation (˚C)',size=18)
-#ax1.tick_params(axis='both', labelsize=18)
+#ax1.plot(degrees, innerStdDevTs, 'k', label='Inner Region', linewidth=1.5, marker='o')
+#ax1.set_title('Standard Deviation of Temperature Estimation',size=20)
+#ax1.plot(degrees, outerStdDevTs, 'k', label='Outer Region', linestyle=':', linewidth=1.5)
+#ax1.set_xlabel('Degree of polynomial', size=20)
+#ax1.set_ylabel('Standard deviation (˚C)',size=20)
 #ax1.grid(color='grey', linestyle='-', linewidth=0.25, alpha=0.5)
 #plt.show()
 
 
 min_deg = np.argmin(innerStdDevTs)+1
-if meanOffsets[min_deg] < 3: 
-    print('Best fit is degree {}'.format(min_deg))
-else:
-    print('Mean offset greater than 3')
+#if meanOffsets[min_deg] < 3: 
+print('Best fit is degree {}'.format(min_deg))
+#else:
+#    print('Mean offset greater than 3')
   #%%  
 '''
 Estimation stage: best fit polynomial order used to estimate the temperature
 of the phantom during heating
 ''' 
-sonalleveNativeFile = abspath(             
-        r"C:\Users\plettlk\DCGAN_Image_Completion\19-PLEK-RLES-05\30W-sonication-wo-motion-artefact_2019-11-12_13-55-06_Native.PAR"
-        )
 
-# read temperature data from PARREC files
-sonalleveNativeData,Params,Dims = PARRECread(sonalleveNativeFile)
+phaseMaps = phaseMaps_stack[200::100,:,:]
+MMaps = MMaps_stack[200::100,:,:]
 
-phaseMaps = sonalleveNativeData[:,:,0,0,0,1,:].swapaxes(0,2)
-MMaps = sonalleveNativeData[:,:,0,0,0,0,:].swapaxes(0,2)
+# display image in pg.image
 
-phaseMaps = phaseMaps[10:27,:,:]
-MMaps = MMaps[10:27,:,:]
+#pg.image(phaseMaps,title='phase')
+#pg.image(MMaps,title='magnitude')
 
 masks = np.ones_like(MMaps)
     
@@ -310,22 +344,31 @@ for i,mask in enumerate(masks_conv):
     labelMap = np.ones_like(targetMap)*dominantLabel
     coherentMask[i][np.where(labeledMask==labelMap)]=0
    
+
+
+xInsideRing,yInsideRing = np.where(xMap**2+yMap**2<innerROIRad**2)
+xOutsideRing,yOutsideRing = np.where(xMap**2+yMap**2>outerROIRad**2)
+
 #creating masks for reference area - frame ROI used for learning
 referenceMask = np.zeros_like(MMaps)
 referenceMask[:,xInsideRing,yInsideRing]=1
 referenceMask[:,xOutsideRing,yOutsideRing]=1
+
 #pg.image(referenceMask, title='Ref mask')
 #pg.image(coherentMask, title='Coherent mask')
 
 maskedPhase = np.ma.masked_where(coherentMask[:phaseMaps.shape[0]],phaseMaps[:coherentMask.shape[0]],copy=True)
 
 unwrappedPhase = unwrap_phase(maskedPhase,seed=100)
+
+
 #pg.image(unwrappedPhase,title ='unwrappedPhase')
 
 
     
 inclusionMask = np.logical_and(np.logical_not(referenceMask),np.logical_not(coherentMask))
 exclusionMask = np.logical_not(inclusionMask)
+
 #pg.image(exclusionMask,title='Exclusion mask')
 
 referencePhase = unwrappedPhase[np.where(inclusionMask[:unwrappedPhase.shape[0]])]
@@ -351,6 +394,8 @@ Y_tests =[]
 w_trains = []
 w_tests = []
 errors = []
+
+
 
 print('Start Prediction of Temperature Map')
 
@@ -406,115 +451,139 @@ deltaT = phase_diff/(B0*alpha*gamma*echoTime) # full temperature map
 innerDeltaT = deltaT[np.where(predictionMask[:deltaT.shape[0]])] #inner ROI map for SD testing
 innerDeltaTMap[np.where(predictionMask[:innerDeltaTMap.shape[0]])] = innerDeltaT
 
+#
 #pg.image(deltaT,title='Temperature Difference, Degree: {}'.format(min_deg))
-''' Plotting T Maps '''
+#pg.image(innerDeltaTMap,title='Inner Temperature Difference, Degree: {}'.format(min_deg))
 
-#xWindow = 50e-3
-#yWindow = 50e-3  
-#
-#innerDeltaTMap = np.fliplr(innerDeltaTMap)
-#MMaps = np.fliplr(MMaps)
-#
-#TMaps_masked = np.ma.masked_where(innerDeltaTMap < 1, innerDeltaTMap)
-#MMaps_cropped = MMaps[:,40:120, 40:120]
-#TMaps_cropped = TMaps_masked[:,40:120, 40:120]
-#
-#time = tags[:,31][::8]
-#times = time - time[0]
-#
-#cmap = cm.get_cmap('plasma')
-#
-#fig=plt.figure(figsize=(10,6))
-#ax3 = fig.add_subplot(234,adjustable='box', aspect='auto')
-#plt.axis('off')
-#m_ax = ax3.imshow(MMaps_cropped[2],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
-#t_ax = ax3.imshow(TMaps_cropped[2],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 1,vmax=6.25,cmap = cmap)
-#ROI_ax = ax3.imshow(frameMask[0,40:120, 40:120],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2], alpha=0.1,cmap=cm.gray)
-#ax3 = fig.add_subplot(235,adjustable='box')
-#plt.axis('off')
-#m_ax = ax3.imshow(MMaps_cropped[7],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
-#t_ax1 = ax3.imshow(TMaps_cropped[7],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 1, vmax=6.25,cmap = cmap)
-#ROI_ax = ax3.imshow(frameMask[0,40:120, 40:120],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2], alpha=0.1,cmap=cm.gray)
-#ax3 = fig.add_subplot(236,adjustable='box')
-#plt.axis('off')
-#m_ax = ax3.imshow(MMaps_cropped[15],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
-#t_ax = ax3.imshow(TMaps_cropped[15],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 1,vmax=6.25,cmap = cmap)
-#ROI_ax = ax3.imshow(frameMask[0,40:120, 40:120],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2], alpha=0.1,cmap=cm.gray)
-#plt.axis('off')
-#
-#print('Images acquired at: {:.2f} s, {:.2f}s, {:.2f}s'.format(times[1], times[7], times[15]))
-#
-#sonalleveTMapFile = sonalleveNativeFile.replace('Native','TMap')
-#    
-#''' GT temperatrue data '''
-#
-## read temperature data from PARREC files
-#sonalleveTMapData,tmapParams,tmapDims = PARRECread(sonalleveTMapFile)
-#
-#
-## reshape data to be displayed by pyqtgraph
-#GT_TMaps = sonalleveTMapData[:,:,0,0,0,0,:].swapaxes(0,2)
-#
-#GT_TMaps = GT_TMaps[10:27,:,:] - 37
-#GT_TMaps_masked = np.ma.masked_where(GT_TMaps < 1, GT_TMaps)
-#
-#GT_TMaps_cropped = GT_TMaps_masked[:,40:120, 40:120]
-#
-#GTtags = tmapParams['tags']
-#GTtime = GTtags[:,31][::4]
-#GTtimes = GTtime - GTtime[0]
-#
-#
-#ax3 = fig.add_subplot(231,adjustable='box')
-#plt.axis('off')
-#m_ax = ax3.imshow(MMaps_cropped[2],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
-#t_ax = ax3.imshow(GT_TMaps_cropped[2],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 1,vmax=6.25,cmap = cmap)
-#ax3 = fig.add_subplot(232,adjustable='box')
-#plt.axis('off')
-#m_ax = ax3.imshow(MMaps_cropped[7],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
-#t_ax1 = ax3.imshow(GT_TMaps_cropped[7],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 1, vmax=6.25,cmap = cmap)
-#ax3 = fig.add_subplot(233,adjustable='box')
-#m_ax = ax3.imshow(MMaps_cropped[15],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
-#t_ax = ax3.imshow(GT_TMaps_cropped[15],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 1,vmax=6.25,cmap = cmap)
-#plt.axis('off')
-#cb_ax = fig.add_axes([0.92, 0.16, 0.02, 0.68])
-#ax3.get_xaxis().set_ticks([])
-#ax3.get_xaxis().set_ticklabels([])
-#ax3.get_yaxis().set_ticks([])
-#ax3.get_yaxis().set_ticklabels([])
-#plt.autoscale(False)
-#
-#plt.show()
-#cbar = fig.colorbar(t_ax1, cb_ax)
-#cbar.ax.tick_params(labelsize=12) 
-#
-#
-#average_peak_temp_rless_qa_30w = []
-#peak_temp_STD_rless_qa_30w = []
-#for i in range(0,16):
-#    average_peak_temp_rless_qa_30w = np.append(average_peak_temp_rless_qa_30w, np.average(innerDeltaTMap[i, 78:82, 78:81]))
-#    peak_temp_STD_rless_qa_30w = np.append(peak_temp_STD_rless_qa_30w,np.std(innerDeltaTMap[i, 78:82, 78:81]))
-#    
-#
-#HIFUaverage_peak_temp = []
-#HIFUpeak_temp_STD = []
-#for i in range(0,16):
-#    
-#    HIFUaverage_peak_temp = np.append(HIFUaverage_peak_temp,np.average(GT_TMaps[i, 78:82, 78:81]))
-#    HIFUpeak_temp_STD= np.append(HIFUpeak_temp_STD,np.std(GT_TMaps[i, 78:82, 78:81]))
-#
-#time = np.linspace(0, 15, 16)
-#
+''' Plotting T Maps '''
+xWindow = 50e-3
+yWindow = 50e-3  
+
+innerDeltaTMap = np.fliplr(innerDeltaTMap)
+MMaps = np.fliplr(MMaps)
+
+TMaps_masked = np.ma.masked_where(innerDeltaTMap < 0.1, innerDeltaTMap)
+MMaps_cropped = MMaps[:,40:120, 40:120]
+TMaps_cropped = TMaps_masked[:,40:120, 40:120]
+
+time = tags[:,31][::8]
+times = time - time[0]
+
+cmap = cm.get_cmap('plasma')
+
+fig=plt.figure(figsize=(8,6))
+ax3 = fig.add_subplot(231,adjustable='box', aspect='auto')
+plt.axis('off')
+m_ax = ax3.imshow(MMaps_cropped[1],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
+t_ax = ax3.imshow(TMaps_cropped[1],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 0,vmax=6.5,cmap = cmap)
+ROI_ax = ax3.imshow(frameMask[1,41:121, 40:120],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2], alpha=0.1,cmap=cm.gray)
+ax3 = fig.add_subplot(232,adjustable='box')
+plt.axis('off')
+m_ax = ax3.imshow(MMaps_cropped[7],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
+t_ax1 = ax3.imshow(TMaps_cropped[7],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 0, vmax=6.5,cmap = cmap)
+ROI_ax = ax3.imshow(frameMask[1,41:121, 40:120],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2], alpha=0.1,cmap=cm.gray)
+ax3 = fig.add_subplot(233,adjustable='box')
+
+m_ax = ax3.imshow(MMaps_cropped[10],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
+t_ax = ax3.imshow(TMaps_cropped[10],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 0,vmax=6.5,cmap = cmap)
+ROI_ax = ax3.imshow(frameMask[1,41:121, 40:120],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2], alpha=0.1,cmap=cm.gray)
+plt.axis('off')
+plt.show()
+
+print('Images acquired at: {:.2f} s, {:.2f}s, {:.2f}s'.format(times[1], times[7], times[15]))
+
+sonalleveTMapFile1 = sonalleveNativeFile1.replace('Native','TMap')
+    
+
+
+# read temperature data from PARREC files
+sonalleveTMapData1,tmapParams,tmapDims = PARRECread(sonalleveTMapFile1)
+
+
+# reshape data to be displayed by pyqtgraph
+GT_TMaps1 = sonalleveTMapData1[:,:,0,0,0,0,1:].swapaxes(0,2)
+GT_Tmaps_1 = GT_TMaps1[1:693,:,:]
+
+sonalleveTMapFile2 = sonalleveNativeFile2.replace('Native','TMap')
+    
+# read temperature data from PARREC files
+sonalleveTMapData2,tmapParams,tmapDims = PARRECread(sonalleveTMapFile2)
+
+
+# reshape data to be displayed by pyqtgraph
+GT_TMaps2 = sonalleveTMapData2[:,:,0,0,0,0,1:].swapaxes(0,2)
+GT_Tmaps_2 = GT_TMaps2[729:1429,:,:]
+
+GT_TMaps_stack = np.vstack((GT_Tmaps_1, GT_Tmaps_2))
+
+GT_TMaps = GT_TMaps_stack[200::100,:,:] - 37
+GT_TMaps_masked = np.ma.masked_where(GT_TMaps < 0.1, GT_TMaps)
+
+GT_TMaps_cropped = GT_TMaps_masked[:,40:120, 40:120]
+
+GTtags = tmapParams['tags']
+GTtime = GTtags[:,31][::4]
+GTtimes = GTtime - GTtime[0]
+
+ax3 = fig.add_subplot(234,adjustable='box')
+plt.axis('off')
+m_ax = ax3.imshow(MMaps_cropped[1],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
+t_ax = ax3.imshow(GT_TMaps_cropped[1],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 0,vmax=6.5,cmap = cmap)
+ROI_ax = ax3.imshow(frameMask[1,41:121, 40:120],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2], alpha=0.1,cmap=cm.gray)
+ax3 = fig.add_subplot(235,adjustable='box')
+plt.axis('off')
+m_ax = ax3.imshow(MMaps_cropped[7],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
+t_ax1 = ax3.imshow(GT_TMaps_cropped[7],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 0, vmax=6.5,cmap = cmap)
+ROI_ax = ax3.imshow(frameMask[1,41:121,40:120],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2], alpha=0.1,cmap=cm.gray)
+ax3 = fig.add_subplot(236,adjustable='box')
+
+m_ax = ax3.imshow(MMaps_cropped[10],interpolation='none',extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 200,cmap=cm.gray)
+t_ax = ax3.imshow(GT_TMaps_cropped[10],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2],vmin = 0,vmax=6.5,cmap = cmap)
+ROI_ax = ax3.imshow(frameMask[1,41:121, 40:120],interpolation='none', extent=[-xWindow/2,xWindow/2,xWindow/2,-yWindow/2], alpha=0.1,cmap=cm.gray)
+plt.axis('off')
+
+cb_ax = fig.add_axes([0.92, 0.16, 0.02, 0.68])
+ax3.get_xaxis().set_ticks([])
+ax3.get_yaxis().set_ticks([])
+plt.autoscale(False)
+plt.show()
+cbar = fig.colorbar(t_ax1, cb_ax)
+cbar.ax.tick_params(labelsize=12)
+
+average_peak_temp_rless_baseline = []
+peak_temp_STD_rless_baseline = []
+for i in range(0,12):
+    average_peak_temp_rless_baseline = np.append(average_peak_temp_rless_baseline, np.average(innerDeltaTMap[i, 74:86,75:85 ]))
+    peak_temp_STD_rless_baseline = np.append(peak_temp_STD_rless_baseline,np.std(innerDeltaTMap[i, 74:86,75:85]))
+
+
+HIFUaverage_peak_temp_baseline = []
+HIFUpeak_temp_STD_baseline = []
+for i in range(0,12):
+    
+    HIFUaverage_peak_temp_baseline = np.append(HIFUaverage_peak_temp_baseline,np.average(GT_TMaps[i,74:86,75:85]))
+    HIFUpeak_temp_STD_baseline= np.append(HIFUpeak_temp_STD_baseline,np.std(GT_TMaps[i,74:86,75:85]))
+    
+baseline_avg_qa_rless = np.average(average_peak_temp_rless_baseline)   
+baseline_std_qa_rless = np.std(peak_temp_STD_rless_baseline)
+
+baseline_avg_qa_HIFU = np.average(HIFUaverage_peak_temp_baseline)   
+baseline_std_qa_HIFU = np.std(HIFUpeak_temp_STD_baseline)
 #
 #plt.figure()
-#plt.errorbar(times[0:16], average_peak_temp_rless_qa_30w, yerr=peak_temp_STD_rless_qa_30w, capsize=5, label = 'Referenceless', marker = '.', markersize=6, color='black')
-#plt.errorbar(times[0:16], HIFUaverage_peak_temp, yerr=HIFUpeak_temp_STD, capsize=5, label ='HIFU Software', marker = '.', markersize=6, color='xkcd:dark orange', linestyle=':')
+#plt.errorbar(times[40::20], average_peak_temp_rless_baseline, yerr=peak_temp_STD_rless_motion, capsize=5, label = 'Referenceless', marker = '.', markersize=6, color='black')
+#plt.errorbar(times[40::20], HIFUaverage_peak_temp_motion, yerr=HIFUpeak_temp_STD_motion, capsize=5, label ='HIFU Software', marker = '.', markersize=6, color='xkcd:dark orange', linestyle=':')
 #plt.xlabel('Time after Starting HIFU (s)', size=18)
 #plt.ylabel('∆T(˚C)', size=18)
 #plt.xticks(fontsize=18)
 #plt.yticks(fontsize=18)
 #plt.title('Average Temperature of Sonicated Region over Time', size=18)
 #plt.grid(color='grey', linestyle='-', linewidth=0.25, alpha=0.5)
-#plt.axvline(x=36, linestyle='--', color='gray', linewidth=0.7)
+##plt.axvline(x=36, linestyle='--', color='gray', linewidth=0.7)
 #plt.legend(fontsize=18)
 #plt.show()
+#print('Images acquired at: {:.2f} s, {:.2f}s, {:.2f}s'.format(GTtimes[1], GTtimes[4], GTtimes[6]))
+#horizontalProfile_rles = innerDeltaTMap[7,95,:]
+#horizontalProfile_sonalleve = GT_TMaps[7,95,:]
+#
+
